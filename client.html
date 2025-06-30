@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parsec Remote - BLE Audio Controller</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="title-area">
+                <h1 class="title">Parsec Remote</h1>
+                <p class="subtitle">by maria sappho</p>
+            </div>
+            <div class="header-status">
+                <div class="status-indicator" id="statusIndicator">
+                    <div class="status-dot"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+                <button id="connectBtn" class="connect-btn">Connect to Host</button>
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- Setup Instructions -->
+            <section class="connection-section">
+                <h2>Setup Instructions</h2>
+                <div class="instructions">
+                    <p><strong>Step 1:</strong> The host computer must be running the main Parsec app (index.html) with BuzzBox connected</p>
+                    <p><strong>Step 2:</strong> The host must run the WebSocket server: <code>node server.js</code></p>
+                    <p><strong>Step 3:</strong> Find the host's IP address (e.g., 192.168.1.25) and enter it below</p>
+                    <p><strong>Step 4:</strong> Click "Connect to Host" to start remote control</p>
+                </div>
+            </section>
+
+            <!-- Connection Setup -->
+            <section class="connection-section">
+                <h2>Host Connection</h2>
+                <div class="control-group">
+                    <label for="hostInput">Host IP Address:</label>
+                    <input type="text" id="hostInput" placeholder="192.168.1.25" class="host-input">
+                    <span></span>
+                </div>
+            </section>
+
+            <!-- Remote BuzzBox Controls Section -->
+            <section class="controls-section">
+                <h2>Remote BuzzBox Controls</h2>
+                
+                <div class="control-group">
+                    <label>Mode:</label>
+                    <div class="mode-buttons">
+                        <button class="mode-btn active" data-mode="0">Off</button>
+                        <button class="mode-btn" data-mode="1">Continuous</button>
+                        <button class="mode-btn" data-mode="2">Intermittent</button>
+                    </div>
+                    <span></span>
+                </div>
+
+                <div class="control-group">
+                    <label for="strengthSlider">Strength:</label>
+                    <input type="range" id="strengthSlider" min="0" max="255" value="128" class="slider">
+                    <span class="slider-value" id="strengthValue">128</span>
+                </div>
+
+                <div class="control-group">
+                    <label for="intervalSlider">Interval (seconds):</label>
+                    <input type="range" id="intervalSlider" min="1" max="10" value="2" class="slider">
+                    <span class="slider-value" id="intervalValue">2s</span>
+                </div>
+            </section>
+
+            <!-- Log Section -->
+            <section class="log-section">
+                <h2>Remote Control Log</h2>
+                <div id="logContainer" class="log-container"></div>
+                <button id="clearLog" class="clear-btn">Clear Log</button>
+            </section>
+        </main>
+    </div>
+
+    <script src="client.js"></script>
+</body>
+</html>
