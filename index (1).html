@@ -1,0 +1,89 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parsec - BLE Audio Controller</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="title-area">
+                <h1 class="title">Parsec</h1>
+                <p class="subtitle">by maria sappho</p>
+            </div>
+            <div class="header-status">
+                <div class="status-indicator" id="statusIndicator">
+                    <div class="status-dot"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+                <button id="connectBtn" class="connect-btn">Connect BuzzBox</button>
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- BuzzBox Controls Section -->
+            <section class="controls-section">
+                <h2>BuzzBox Controls</h2>
+                
+                <div class="control-group">
+                    <label>Mode:</label>
+                    <div class="mode-buttons">
+                        <button class="mode-btn active" data-mode="0">Off</button>
+                        <button class="mode-btn" data-mode="1">Continuous</button>
+                        <button class="mode-btn" data-mode="2">Intermittent</button>
+                    </div>
+                    <span></span>
+                </div>
+
+                <div class="control-group">
+                    <label for="strengthSlider">Strength:</label>
+                    <input type="range" id="strengthSlider" min="0" max="255" value="128" class="slider">
+                    <span class="slider-value" id="strengthValue">128</span>
+                </div>
+
+                <div class="control-group">
+                    <label for="intervalSlider">Interval (seconds):</label>
+                    <input type="range" id="intervalSlider" min="1" max="10" value="2" class="slider">
+                    <span class="slider-value" id="intervalValue">2s</span>
+                </div>
+            </section>
+
+            <!-- Audio Input Section -->
+            <section class="audio-section">
+                <h2>Audio Input</h2>
+                <div class="control-group">
+                    <label for="audioInput">Microphone:</label>
+                    <select id="audioInput" class="audio-select">
+                        <option value="">Select audio input...</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label for="volumeSlider">Input Volume:</label>
+                    <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.5" class="slider">
+                    <span class="slider-value" id="volumeValue">0.5</span>
+                </div>
+
+                <div class="visualizer-container">
+                    <canvas id="waveform" class="waveform-canvas"></canvas>
+                    <div class="volume-meter">
+                        <div class="volume-bar" id="volumeBar"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Log Section -->
+            <section class="log-section">
+                <h2>Status Log</h2>
+                <div id="logContainer" class="log-container"></div>
+                <button id="clearLog" class="clear-btn">Clear Log</button>
+            </section>
+        </main>
+    </div>
+
+    <script src="bluetooth.js"></script>
+    <script src="audio.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
