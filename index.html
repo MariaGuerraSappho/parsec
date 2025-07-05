@@ -2,74 +2,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parsec - RNBO Audio Effects Chain</title>
+    <title>Parsec - Simple RNBO Audio Processor</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 </head>
 <body>
     <div class="container">
         <header class="header">
             <div class="title-area">
                 <h1 class="title">Parsec</h1>
-                <div class="audio-status-indicator" id="audioStatusIndicator">
-                    <span class="status-label">OFF</span>
-                </div>
-                <p class="subtitle">by maria sappho</p>
+                <p class="subtitle">Simple RNBO Audio Processor</p>
             </div>
-            <div class="header-volume">
-                <label for="masterVolume">Master Volume:</label>
-                <input type="range" id="masterVolume" min="0" max="1" step="0.01" value="0.5" class="master-volume-slider">
-                <span class="volume-value" id="masterVolumeValue">0.50</span>
-            </div>
-            <div class="header-controls">
-                <div class="status-indicator" id="statusIndicator">
+            <div class="header-status">
+                <div class="status-indicator">
                     <div class="status-dot"></div>
-                    <span id="statusText">Disconnected</span>
+                    <span id="statusText">Ready</span>
                 </div>
-                <div class="battery-indicator" id="batteryIndicator" style="display: none;">
-                    <span class="battery-icon">🔋</span>
-                    <span class="battery-level" id="batteryLevel">--</span>
+                <div class="ble-header-controls">
+                    <div class="ble-status-indicator">
+                        <div class="ble-status-dot" id="bleStatusDot"></div>
+                        <span id="bleStatusText">Disconnected</span>
+                    </div>
+                    <button id="connectBuzzBox" class="connect-btn">Connect BuzzBox</button>
                 </div>
-                <button id="connectBtn" class="connect-btn">Connect BuzzBox</button>
             </div>
         </header>
 
         <main class="main">
-            <!-- BuzzBox Controls Section -->
-            <section class="buzzbox-section">
+            <!-- Audio Engine Section -->
+            <section class="audio-engine-section">
                 <div class="section-header">
-                    <h2>BuzzBox Controls</h2>
-                    <button class="collapse-btn" data-target="buzzbox-controls">−</button>
+                    <h2>Audio Engine</h2>
                 </div>
-                <div class="buzzbox-controls collapsible-content" id="buzzbox-controls">
-                    <div class="control-row">
-                        <label>Mode:</label>
-                        <div class="mode-buttons">
-                            <button class="mode-btn active" data-mode="0">Off</button>
-                            <button class="mode-btn" data-mode="1">Continuous</button>
-                            <button class="mode-btn" data-mode="2">Intermittent</button>
-                            <button class="mode-btn" data-mode="3">Random</button>
+                <div class="engine-controls">
+                    <button id="startAudio" class="engine-btn">Start Audio</button>
+                    <div class="audio-input-selection">
+                        <label for="audioInput">Audio Input:</label>
+                        <select id="audioInput" class="audio-select">
+                            <option value="">Select audio input device...</option>
+                        </select>
+                    </div>
+                    <div class="volume-control">
+                        <label for="masterVolume">Output Volume:</label>
+                        <input type="range" id="masterVolume" min="0" max="1" step="0.01" value="0.8" class="master-volume-slider">
+                        <span class="volume-value" id="masterVolumeValue">0.80</span>
+                    </div>
+                    <div class="visualizer">
+                        <div class="audio-status-indicator" id="audioStatus">
+                            <span class="status-label">MONITORING</span>
                         </div>
-                    </div>
-                    <div class="control-row">
-                        <label for="strengthSlider">Strength:</label>
-                        <input type="range" id="strengthSlider" min="0" max="255" value="128" class="slider">
-                        <span class="slider-value" id="strengthValue">128</span>
-                    </div>
-                    <div class="control-row">
-                        <label for="intervalSlider">Interval:</label>
-                        <input type="range" id="intervalSlider" min="1" max="10" value="2" class="slider">
-                        <span class="slider-value" id="intervalValue">2s</span>
+                        <div class="volume-meter">
+                            <div class="volume-bar" id="volumeBar"></div>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- Effects Selection -->
-            <section class="effects-selector">
+            <section class="effects-section">
                 <div class="section-header">
-                    <h2>Effects Library</h2>
-                    <button class="collapse-btn" data-target="effects-grid">−</button>
+                    <h2>RNBO Effects</h2>
+                    <div class="effects-info">
+                        <span>Click to add effects to chain</span>
+                    </div>
                 </div>
-                <div class="effects-grid collapsible-content" id="effects-grid">
+                <div class="effects-grid">
                     <button class="effect-btn" data-effect="rnbo.overdrive">Overdrive</button>
                     <button class="effect-btn" data-effect="rnbo.chorus">Chorus</button>
                     <button class="effect-btn" data-effect="rnbo.tremolo">Tremolo</button>
@@ -82,32 +81,85 @@
                     <button class="effect-btn" data-effect="rnbo.octaver">Octaver</button>
                     <button class="effect-btn" data-effect="rnbo.filterdelay">Filter Delay</button>
                     <button class="effect-btn" data-effect="rnbo.platereverb">Plate Reverb</button>
-                    <button class="effect-btn" data-effect="rnbo.looper">Looper</button>
-                    <button class="effect-btn" data-effect="rnbo.freezer">Freezer</button>
-                    <button class="effect-btn" data-effect="rnbo.guitarsynth">Guitar Synth</button>
                 </div>
             </section>
 
-            <!-- Effects Chain Visualization -->
+            <!-- Effects Chain -->
             <section class="effects-chain-section">
-                <div class="chain-header">
+                <div class="section-header">
                     <h2>Effects Chain</h2>
                     <div class="chain-buttons">
-                        <button class="collapse-btn" data-target="effects-chain-container">−</button>
-                        <button id="randomiseEffects" class="clear-btn">🎲 Randomise Effects</button>
-                        <button id="clearChain" class="clear-btn">Clear All</button>
+                        <button id="randomiseEffects" class="preset-btn">🎲 Randomize Chain</button>
+                        <button id="clearChain" class="preset-btn">🗑️ Clear Chain</button>
                     </div>
                 </div>
-                <div class="collapsible-content" id="effects-chain-container">
-                    <div class="effects-chain" id="effectsChain">
-                        <div class="chain-node input-node">
-                            <div class="node-icon">🎤</div>
-                            <div class="node-label">Input</div>
+                <div class="effects-chain" id="effectsChain">
+                    <!-- Dynamic content will be inserted here -->
+                </div>
+                <div class="chain-info">
+                    <p>Drag effects to reorder • Click × to remove • Effects process in sequence</p>
+                </div>
+            </section>
+
+            <!-- Parameter Controls -->
+            <section class="controls-section">
+                <div class="section-header">
+                    <h2>Effect Parameters</h2>
+                </div>
+                <div class="controls-grid" id="controlsGrid">
+                    <div class="no-parameters">
+                        <p>Add effects to the chain to see controls here</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Preset Bank Section -->
+            <section class="preset-bank-section">
+                <div class="section-header">
+                    <h2>Preset Bank</h2>
+                </div>
+                <div class="save-preset-row">
+                    <input type="text" id="presetNameInput" class="preset-name-input" placeholder="Enter preset name...">
+                    <button id="savePresetBtn" class="preset-btn">💾 Save Preset</button>
+                </div>
+                <div class="preset-bank-grid" id="presetBankGrid">
+                    <div class="no-presets">No presets saved yet</div>
+                </div>
+            </section>
+
+            <!-- BuzzBox Control Section -->
+            <section class="buzzbox-section">
+                <div class="section-header">
+                    <h2>BuzzBox Control</h2>
+                    <div class="battery-indicator" id="batteryIndicator">
+                        <span class="battery-icon">🔋</span>
+                        <span class="battery-level" id="batteryLevel">--</span>
+                    </div>
+                </div>
+                <div class="buzzbox-controls" id="buzzboxControls">
+                    <div class="control-group">
+                        <label>Mode:</label>
+                        <div class="mode-buttons">
+                            <button class="mode-btn active" data-mode="0">Off</button>
+                            <button class="mode-btn" data-mode="1">Continuous</button>
+                            <button class="mode-btn" data-mode="2">Random</button>
+                            <button class="mode-btn" data-mode="3">Single</button>
                         </div>
-                        <div class="chain-connector"></div>
-                        <div class="chain-node output-node">
-                            <div class="node-icon">🔊</div>
-                            <div class="node-label">Output</div>
+                    </div>
+
+                    <div class="control-group">
+                        <label for="strengthSlider">Strength:</label>
+                        <input type="range" id="strengthSlider" min="0" max="255" value="128" class="slider" disabled>
+                        <span class="slider-value" id="strengthValue">128</span>
+                    </div>
+
+                    <div class="random-mode-info" id="randomModeInfo" style="display: none;">
+                        <div class="random-status">
+                            <span id="randomStatusText">Random mode ready</span>
+                        </div>
+                        <div class="random-timings">
+                            <span>Buzz: <span id="currentBuzzDuration">--</span>ms</span>
+                            <span>Silence: <span id="currentSilenceDuration">--</span>ms</span>
                         </div>
                     </div>
                 </div>
@@ -117,46 +169,25 @@
             <section class="hand-tracking-section">
                 <div class="section-header">
                     <h2>Hand Tracking</h2>
-                    <button class="collapse-btn" data-target="hand-tracking-content">−</button>
-                </div>
-                <div class="collapsible-content" id="hand-tracking-content">
                     <div class="hand-controls">
-                        <button id="toggleHandTracking" class="engine-btn">Start Hand Tracking</button>
-                        <button id="toggleWebcam" class="clear-btn">Show Webcam</button>
+                        <button id="startHandTracking" class="engine-btn">Start Camera</button>
+                        <button id="stopHandTracking" class="engine-btn" disabled>Stop Camera</button>
                     </div>
-                    <div class="hand-tracking-display">
-                        <div class="webcam-container" id="webcamContainer" style="display: none;">
-                            <video id="webcamVideo" class="webcam-video" autoplay playsinline></video>
-                            <canvas id="webcamCanvas" class="webcam-canvas"></canvas>
+                </div>
+                <div class="hand-tracking-display">
+                    <div class="webcam-container">
+                        <video id="handVideo" class="webcam-video" autoplay muted playsinline></video>
+                        <canvas id="handCanvas" class="webcam-canvas" width="640" height="480"></canvas>
+                    </div>
+                    <div class="gesture-controls">
+                        <h4>Gesture Mapping</h4>
+                        <div class="gesture-buttons">
+                            <button id="randomizeGestures" class="preset-btn">🎲 Random Map</button>
+                            <button id="clearGestures" class="preset-btn">🗑️ Clear Map</button>
+                            <button id="gestureToggle" class="gesture-toggle-btn">Enable Gestures</button>
                         </div>
-                        <div class="gesture-info" id="gestureInfo" style="display: none;">
-                            <h4>Hand Gesture Mapping</h4>
-                            <div class="gesture-mapping">
-                                <div class="gesture-item">
-                                    <span class="gesture-label">👈 Wrist X:</span>
-                                    <span class="parameter-name" id="panParamName">Effect Param</span>
-                                    <span class="parameter-value" id="panParamValue">0.00</span>
-                                </div>
-                                <div class="gesture-item">
-                                    <span class="gesture-label">👆 Wrist Y:</span>
-                                    <span class="parameter-name" id="primaryParamName">None</span>
-                                    <span class="parameter-value" id="primaryParamValue">0.00</span>
-                                </div>
-                                <div class="gesture-item">
-                                    <span class="gesture-label">✊ Hand Curl:</span>
-                                    <span class="parameter-name" id="volumeParamName">Effect Param</span>
-                                    <span class="parameter-value" id="volumeParamValue">0.00</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="effects-monitor">
-                            <h4>Effects Output</h4>
-                            <div class="effects-volume-meter">
-                                <div class="effects-volume-bar" id="effectsVolumeBar"></div>
-                            </div>
-                            <div class="monitor-info">
-                                <span style="font-size: 0.7rem; color: rgba(255, 255, 255, 0.6);">Audio after effects processing</span>
-                            </div>
+                        <div class="gesture-mapping-list" id="gestureMappingList">
+                            <div class="no-mappings">No gesture mappings active</div>
                         </div>
                     </div>
                 </div>
@@ -166,217 +197,37 @@
             <section class="video-player-section">
                 <div class="section-header">
                     <h2>Video Player</h2>
-                    <button class="collapse-btn" data-target="video-player-content">−</button>
-                </div>
-                <div class="collapsible-content" id="video-player-content">
-                    <div class="video-controls">
-                        <input type="file" id="videoFile" accept="video/*" style="display: none;">
-                        <button id="loadVideo" class="engine-btn">Load Video</button>
-                        <button id="playVideo" class="engine-btn" disabled>▶ Play</button>
-                        <button id="pauseVideo" class="engine-btn" disabled>⏸ Pause</button>
-                        <button id="popupVideo" class="clear-btn" disabled>📺 Open Popup</button>
-                    </div>
-                    <div class="video-container" id="videoContainer" style="display: none;">
-                        <video id="mainVideo" class="main-video" controls controlsList="nodownload">
-                            Your browser does not support the video tag.
-                        </video>
-                        <div class="video-info">
-                            <span id="videoFileName">No video loaded</span>
-                            <span id="videoDuration">00:00 / 00:00</span>
-                        </div>
+                    <div class="projector-status">
+                        <div class="projector-status-dot" id="projectorStatusDot"></div>
+                        <span id="projectorStatusText">Not connected</span>
                     </div>
                 </div>
-            </section>
-
-            <!-- Feedback Control Section -->
-            <section class="feedback-control-section">
-                <div class="section-header">
-                    <h2>Feedback Control</h2>
-                    <button class="collapse-btn" data-target="feedback-controls">−</button>
+                <div class="video-controls">
+                    <input type="file" id="videoFileInput" accept="video/*" style="display: none;">
+                    <button id="loadVideoBtn" class="engine-btn">Load Video</button>
+                    <button id="playVideoBtn" class="engine-btn">Play</button>
+                    <button id="pauseVideoBtn" class="engine-btn">Pause</button>
+                    <button id="openProjectorBtn" class="engine-btn">Open Projector</button>
+                    <button id="closeProjectorBtn" class="engine-btn">Close Projector</button>
                 </div>
-                <div class="feedback-controls collapsible-content" id="feedback-controls">
-                    <div class="feedback-toggle-container">
-                        <button id="feedbackToggle" class="effect-toggle-btn">
-                            <span class="toggle-indicator"></span>
-                            <span class="toggle-label">OFF</span>
-                        </button>
-                    </div>
-                    
-                    <div class="feedback-controls-grid">
-                        <div class="eq-section">
-                            <h4>3-Band EQ</h4>
-                            <div class="eq-controls">
-                                <div class="eq-band">
-                                    <label>Low (250Hz)</label>
-                                    <input type="range" id="eqLow" min="-12" max="12" step="0.5" value="0" class="eq-slider">
-                                    <span class="eq-value" id="eqLowValue">0.0dB</span>
-                                </div>
-                                <div class="eq-band">
-                                    <label>Mid (1kHz)</label>
-                                    <input type="range" id="eqMid" min="-12" max="12" step="0.5" value="0" class="eq-slider">
-                                    <span class="eq-value" id="eqMidValue">0.0dB</span>
-                                </div>
-                                <div class="eq-band">
-                                    <label>High (4kHz)</label>
-                                    <input type="range" id="eqHigh" min="-12" max="12" step="0.5" value="0" class="eq-slider">
-                                    <span class="eq-value" id="eqHighValue">0.0dB</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="compressor-section">
-                            <h4>Compressor</h4>
-                            <div class="compressor-controls">
-                                <div class="compressor-param">
-                                    <label>Threshold</label>
-                                    <input type="range" id="compThreshold" min="-60" max="0" step="1" value="-24" class="comp-slider">
-                                    <span class="comp-value" id="compThresholdValue">-24dB</span>
-                                </div>
-                                <div class="compressor-param">
-                                    <label>Ratio</label>
-                                    <input type="range" id="compRatio" min="1" max="20" step="0.5" value="4" class="comp-slider">
-                                    <span class="comp-value" id="compRatioValue">4:1</span>
-                                </div>
-                                <div class="compressor-param">
-                                    <label>Attack</label>
-                                    <input type="range" id="compAttack" min="0" max="1" step="0.01" value="0.003" class="comp-slider">
-                                    <span class="comp-value" id="compAttackValue">3ms</span>
-                                </div>
-                                <div class="compressor-param">
-                                    <label>Release</label>
-                                    <input type="range" id="compRelease" min="0" max="1" step="0.01" value="0.25" class="comp-slider">
-                                    <span class="comp-value" id="compReleaseValue">250ms</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Preset Bank Section -->
-            <section class="preset-bank-section">
-                <div class="section-header">
-                    <h2>Preset Bank</h2>
-                    <button class="collapse-btn" data-target="preset-bank-content">−</button>
-                </div>
-                <div class="collapsible-content" id="preset-bank-content">
-                    <div class="save-preset-row">
-                        <input type="text" id="presetName" class="preset-name-input" placeholder="Enter preset name...">
-                        <button id="savePreset" class="engine-btn">Save Preset</button>
-                    </div>
-                    <div class="preset-bank-grid" id="presetBankGrid">
-                        <div class="no-presets">
-                            <p>No saved presets. Create your first preset by setting up effects and clicking "Save Preset" above.</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Controls Panel -->
-            <section class="controls-section">
-                <div class="section-header">
-                    <h2>Controls</h2>
-                    <button class="collapse-btn" data-target="controls-content">−</button>
-                </div>
-                <div class="collapsible-content" id="controls-content">
-                    <div class="controls-tabs">
-                        <button class="tab-btn active" data-tab="effects">Effect Controls</button>
-                        <button class="tab-btn" data-tab="audio">Audio Settings</button>
-                    </div>
-                    
-                    <div class="tab-content" id="effects-tab">
-                        <div class="controls-grid" id="controlsGrid">
-                            <div class="no-effects">
-                                <p>Select effects above to see controls here</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="tab-content hidden" id="buzzbox-tab">
-                        <div class="buzzbox-controls">
-                            <div class="control-row">
-                                <label>Mode:</label>
-                                <div class="mode-buttons">
-                                    <button class="mode-btn active" data-mode="0">Off</button>
-                                    <button class="mode-btn" data-mode="1">Continuous</button>
-                                    <button class="mode-btn" data-mode="2">Intermittent</button>
-                                    <button class="mode-btn" data-mode="3">Random</button>
-                                </div>
-                            </div>
-                            <div class="control-row">
-                                <label for="strengthSlider">Strength:</label>
-                                <input type="range" id="strengthSlider" min="0" max="255" value="128" class="slider">
-                                <span class="slider-value" id="strengthValue">128</span>
-                            </div>
-                            <div class="control-row">
-                                <label for="intervalSlider">Interval:</label>
-                                <input type="range" id="intervalSlider" min="1" max="10" value="2" class="slider">
-                                <span class="slider-value" id="intervalValue">2s</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="tab-content hidden" id="audio-tab">
-                        <div class="audio-controls">
-                            <div class="audio-section">
-                                <h3>Playback Control</h3>
-                                <div class="playback-controls">
-                                    <button id="playAudio" class="engine-btn">▶ Play</button>
-                                    <button id="pauseAudio" class="engine-btn">⏸ Pause</button>
-                                    <div class="playback-info">
-                                        <span>Spacebar = Play | X = Pause</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="audio-section">
-                                <h3>Audio Engine</h3>
-                                <div class="engine-controls">
-                                    <button id="startAudio" class="engine-btn">Start Audio</button>
-                                    <div class="input-buttons">
-                                        <button class="input-btn active" data-input="none">No Input</button>
-                                        <button class="input-btn" data-input="mic">Microphone</button>
-                                        <button class="input-btn" data-input="file">Audio File</button>
-                                    </div>
-                                    <input type="file" id="audioFile" accept="audio/*" style="display: none;">
-                                </div>
-                                
-                                <!-- Audio Input Selection -->
-                                <div class="audio-input-selection" style="margin: 10px 0;">
-                                    <label for="audioInput" style="display: block; margin-bottom: 5px; font-size: 0.9rem; color: #4ecdc4;">Audio Input Device:</label>
-                                    <select id="audioInput" class="audio-select" style="width: 100%; margin-bottom: 5px;">
-                                        <option value="">Select audio input device...</option>
-                                    </select>
-                                    <p style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.6); margin: 0;">
-                                        Select your sound card or audio interface from the dropdown above
-                                    </p>
-                                </div>
-                                
-                                <div class="volume-meter">
-                                    <div class="volume-bar" id="volumeBar"></div>
-                                </div>
-                            </div>
-                        </div>
+                <div class="video-container">
+                    <video id="mainVideo" class="main-video" controls muted></video>
+                    <div class="video-info">
+                        <span id="videoFileName">No video loaded</span>
+                        <span id="videoDuration">--:--</span>
                     </div>
                 </div>
             </section>
         </main>
 
-        <!-- Status Footer -->
+        <!-- Status Log -->
         <footer class="status-footer">
             <div class="log-header">
-                <h3>Status Log</h3>
-                <button id="clearLog" class="clear-btn">Clear Log</button>
+                <h3>Console Log</h3>
+                <button id="clearLog" class="clear-btn">Clear</button>
             </div>
             <div id="logContainer" class="log-container"></div>
         </footer>
-    </div>
-
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="loading-content">
-            <div class="spinner"></div>
-            <p>Loading RNBO patch...</p>
-        </div>
     </div>
 
     <script type="importmap">
@@ -386,12 +237,11 @@
         }
     }
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="bluetooth.js"></script>
     <script src="audio.js"></script>
+    <script src="bluetooth.js"></script>
+    <script src="hand-tracking.js" type="module"></script>
+    <script src="gesture-mapper.js" type="module"></script>
+    <script src="video-sync.js" type="module"></script>
     <script type="module" src="main.js"></script>
 </body>
 </html>

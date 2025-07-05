@@ -10,6 +10,13 @@ class BluetoothManager {
         this.batteryLevelCharacteristic = null;
         this.listeners = {};
         this.batteryPollInterval = null; // Add polling interval tracker
+        this.randomModeInterval = null;
+        this.randomModeActive = false;
+        this.currentRandomState = { buzzing: false, buzzDuration: 0, silenceDuration: 0 };
+        
+        // Add GATT operation queue to prevent overlapping operations
+        this.gattQueue = [];
+        this.gattBusy = false;
         
         // BuzzBox service and characteristic UUIDs
         this.SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
@@ -19,6 +26,7 @@ class BluetoothManager {
         this.BATTERY_LEVEL_CHARACTERISTIC_UUID = '12345678-1234-5678-1234-56789abcdef4'; // Custom battery characteristic
         
         // Remove standard Battery Service UUID - using custom service instead
+        console.log('🔵 BluetoothManager initialized');
     }
 
     on(event, callback) {
@@ -117,17 +125,49 @@ class BluetoothManager {
         }
     }
 
+    /**
+     * Queue GATT operations to prevent "operation already in progress" errors
+     */
+    async queueGattOperation(operation) {
+        return new Promise((resolve, reject) => {
+            this.gattQueue.push({ operation, resolve, reject });
+            this.processGattQueue();
+        });
+    }
+
+    async processGattQueue() {
+        if (this.gattBusy || this.gattQueue.length === 0) {
+            return;
+        }
+
+        this.gattBusy = true;
+        const { operation, resolve, reject } = this.gattQueue.shift();
+
+        try {
+            const result = await operation();
+            resolve(result);
+        } catch (error) {
+            reject(error);
+        } finally {
+            this.gattBusy = false;
+            // Process next operation after a small delay
+            setTimeout(() => this.processGattQueue(), 50);
+        }
+    }
+
     async readBatteryLevel() {
         try {
             if (!this.batteryLevelCharacteristic) {
                 return null;
             }
             
-            const value = await this.batteryLevelCharacteristic.readValue();
-            const batteryLevel = value.getUint8(0);
-            
-            this.emit('batteryUpdate', batteryLevel);
-            return batteryLevel;
+            return await this.queueGattOperation(async () => {
+                const value = await this.batteryLevelCharacteristic.readValue();
+                const batteryLevel = value.getUint8(0);
+                
+                this.emit('batteryUpdate', batteryLevel);
+                return batteryLevel;
+            });
             
         } catch (error) {
             this.emit('error', `Failed to read battery level: ${error.message}`);
@@ -138,7 +178,8 @@ class BluetoothManager {
 
     async disconnect() {
         try {
-            // Stop battery polling before disconnecting
+            // Stop random mode and battery polling
+            this.stopRandomMode();
             this.stopBatteryPolling();
             
             if (this.device && this.device.gatt.connected) {
@@ -156,13 +197,140 @@ class BluetoothManager {
                 throw new Error('Mode characteristic not available');
             }
             
-            const buffer = new Uint8Array([mode]);
-            await this.modeCharacteristic.writeValue(buffer);
+            // Handle special modes
+            if (mode === 2) {
+                // Random mode - start the random pattern
+                this.startRandomMode();
+                this.emit('modeChanged', mode);
+                return;
+            } else if (mode === 3) {
+                // Single buzz mode
+                await this.singleBuzz();
+                this.emit('modeChanged', mode);
+                return;
+            } else {
+                // Stop random mode if it's running
+                this.stopRandomMode();
+            }
+            
+            await this.queueGattOperation(async () => {
+                const buffer = new Uint8Array([mode]);
+                await this.modeCharacteristic.writeValue(buffer);
+            });
+            
+            console.log(`🔵 Mode set to: ${mode}`);
+            this.emit('modeChanged', mode);
             
         } catch (error) {
             this.emit('error', error.message);
             throw error;
         }
+    }
+
+    startRandomMode() {
+        if (this.randomModeActive) {
+            this.stopRandomMode();
+        }
+        
+        this.randomModeActive = true;
+        console.log('🔵 Starting random mode');
+        
+        const runRandomCycle = async () => {
+            if (!this.randomModeActive) return;
+            
+            // Generate random durations - buzz up to 10 seconds, silence up to 5 seconds
+            const buzzDuration = 500 + Math.random() * 9500; // 500ms to 10000ms (10 seconds)
+            const silenceDuration = 1000 + Math.random() * 4000; // 1000ms to 5000ms (5 seconds)
+            
+            this.currentRandomState = {
+                buzzing: true,
+                buzzDuration: Math.round(buzzDuration),
+                silenceDuration: Math.round(silenceDuration)
+            };
+            
+            this.emit('randomStateChanged', this.currentRandomState);
+            
+            try {
+                // Start buzz
+                await this.writeMode(1);
+                console.log(`🔵 Random buzz: ${buzzDuration}ms`);
+                
+                // Wait for buzz duration
+                await this.delay(buzzDuration);
+                
+                if (!this.randomModeActive) return;
+                
+                // Stop buzz
+                await this.writeMode(0);
+                this.currentRandomState.buzzing = false;
+                this.emit('randomStateChanged', this.currentRandomState);
+                
+                console.log(`🔵 Random silence: ${silenceDuration}ms`);
+                
+                // Wait for silence duration
+                await this.delay(silenceDuration);
+                
+                if (this.randomModeActive) {
+                    // Schedule next cycle with a small delay to prevent overlapping operations
+                    this.randomModeInterval = setTimeout(runRandomCycle, 100);
+                }
+                
+            } catch (error) {
+                console.error('🔵 Error in random mode:', error);
+                this.emit('error', `Random mode error: ${error.message}`);
+                this.stopRandomMode();
+            }
+        };
+        
+        // Start the first cycle
+        runRandomCycle();
+    }
+
+    stopRandomMode() {
+        if (this.randomModeInterval) {
+            clearTimeout(this.randomModeInterval);
+            this.randomModeInterval = null;
+        }
+        
+        if (this.randomModeActive) {
+            this.randomModeActive = false;
+            console.log('🔵 Random mode stopped');
+            
+            // Explicitly turn off buzzer when stopping random mode
+            this.writeMode(0).catch(error => {
+                console.error('🔵 Failed to turn off buzzer after stopping random mode:', error);
+            });
+            
+            this.emit('randomModeStopped');
+        }
+    }
+
+    async singleBuzz() {
+        try {
+            console.log('🔵 Single buzz triggered');
+            await this.writeMode(1);
+            await this.delay(200); // Short buzz
+            await this.writeMode(0);
+            this.emit('singleBuzzComplete');
+        } catch (error) {
+            console.error('🔵 Single buzz error:', error);
+            this.emit('error', `Single buzz error: ${error.message}`);
+        }
+    }
+
+    async writeMode(mode) {
+        if (!this.modeCharacteristic) {
+            throw new Error('Mode characteristic not available');
+        }
+        
+        return await this.queueGattOperation(async () => {
+            const buffer = new Uint8Array([mode]);
+            await this.modeCharacteristic.writeValue(buffer);
+        });
+    }
+
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     async setStrength(strength) {
@@ -171,8 +339,10 @@ class BluetoothManager {
                 throw new Error('Strength characteristic not available');
             }
             
-            const buffer = new Uint8Array([strength]);
-            await this.strengthCharacteristic.writeValue(buffer);
+            await this.queueGattOperation(async () => {
+                const buffer = new Uint8Array([strength]);
+                await this.strengthCharacteristic.writeValue(buffer);
+            });
             
         } catch (error) {
             this.emit('error', error.message);
@@ -186,8 +356,10 @@ class BluetoothManager {
                 throw new Error('Interval characteristic not available');
             }
             
-            const buffer = new Uint8Array([interval]);
-            await this.intervalCharacteristic.writeValue(buffer);
+            await this.queueGattOperation(async () => {
+                const buffer = new Uint8Array([interval]);
+                await this.intervalCharacteristic.writeValue(buffer);
+            });
             
         } catch (error) {
             this.emit('error', error.message);
