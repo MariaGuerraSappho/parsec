@@ -22,10 +22,14 @@ export async function loadRNBOEffect(patchData, audioContext) {
 
 export async function loadBuiltInEffect(effectName, audioContext) {
     try {
-        const response = await fetch(`/${effectName}.json`);
+        // Build relative path correctly for GitHub Pages
+        const basePath = window.location.pathname.replace(/\/[^\/]*$/, '/');
+        const response = await fetch(`${basePath}${effectName}.json`);
+        
         if (!response.ok) {
             throw new Error(`Failed to fetch ${effectName}: ${response.statusText}`);
         }
+
         const patchData = await response.json();
         return await loadRNBOEffect(patchData, audioContext);
     } catch (error) {
