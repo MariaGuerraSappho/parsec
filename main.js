@@ -46,6 +46,8 @@ class Parsec {
         this.popupWindow = null;
         this.popupVideo = null;
         this.videoLoaded = false;
+        this.effectsAnalyser = null; // Add effects analyser for monitoring output
+        this.effectsVolumeBar = null;
         this.initializeElements();
         this.setupEventListeners();
         this.initializeHandTracking();
@@ -115,7 +117,8 @@ class Parsec {
             toggleWebcam: document.getElementById('toggleWebcam'),
             webcamContainer: document.getElementById('webcamContainer'),
             webcamVideo: document.getElementById('webcamVideo'),
-            webcamCanvas: document.getElementById('webcamCanvas')
+            webcamCanvas: document.getElementById('webcamCanvas'),
+            effectsVolumeBar: document.getElementById('effectsVolumeBar')
         };
         this.mainVideo = this.elements.mainVideo;
     }
@@ -496,7 +499,9 @@ class Parsec {
 
     reconnectAudioChain() {
         this.log('Rebuilding audio chain...', 'info');
+        
         try {
+            // Disconnect all existing connections
             this.effectNodes.forEach((node, index) => {
                 try {
                     node.disconnect();
@@ -504,6 +509,7 @@ class Parsec {
                     // Node might already be disconnected
                 }
             });
+
             if (this.inputSource) {
                 try {
                     this.inputSource.disconnect();
@@ -511,6 +517,7 @@ class Parsec {
                     // Source might already be disconnected
                 }
             }
+
             if (this.feedbackNodes.lowShelf) {
                 try {
                     this.feedbackNodes.lowShelf.disconnect();
@@ -521,22 +528,38 @@ class Parsec {
                     // Nodes might already be disconnected
                 }
             }
+
+            // Disconnect master gain from analyser temporarily
+            try {
+                this.masterGainNode.disconnect();
+            } catch (e) {
+                // Already disconnected
+            }
         } catch (error) {
             this.log(`Error during disconnect phase: ${error.message}`, 'error');
         }
+
         if (!this.inputSource) {
             this.log('No input source available - audio chain cannot be built', 'info');
+            // Reconnect master gain to effects analyser and destination
+            this.masterGainNode.connect(this.effectsAnalyser);
+            this.effectsAnalyser.connect(this.context.destination);
             return;
         }
+
         if (!this.masterGainNode) {
             this.log('Master gain node not available', 'error');
             return;
         }
+
         let currentNode = this.inputSource;
         let connectionsCount = 0;
         const connectionLog = [];
+
         try {
             connectionLog.push('Input Source');
+
+            // Add feedback control if enabled
             if (this.feedbackEnabled && this.feedbackNodes.lowShelf) {
                 currentNode.connect(this.feedbackNodes.lowShelf);
                 currentNode = this.feedbackNodes.compressor; 
@@ -544,50 +567,81 @@ class Parsec {
                 connectionLog.push('Feedback EQ/Compressor');
                 this.log('✓ Connected input → feedback processing', 'info');
             }
+
+            // Get active effects with proper node validation
             const activeEffects = [];
             for (let i = 0; i < this.effectNodes.length; i++) {
                 const deviceData = this.devices[i];
-                if (deviceData && !deviceData.bypassed) {
-                    activeEffects.push({ 
-                        node: this.effectNodes[i], 
-                        name: deviceData.name,
-                        index: i 
-                    });
+                const effectNode = this.effectNodes[i];
+                
+                if (deviceData && !deviceData.bypassed && effectNode) {
+                    // Verify the effect node is valid
+                    if (effectNode.connect && typeof effectNode.connect === 'function') {
+                        activeEffects.push({ 
+                            node: effectNode, 
+                            name: deviceData.name,
+                            index: i,
+                            device: deviceData.device
+                        });
+                        this.log(`✓ Effect node validated: ${deviceData.name}`, 'info');
+                    } else {
+                        this.log(`✗ Invalid effect node for ${deviceData.name} - skipping`, 'error');
+                    }
                 }
             }
+
+            this.log(`Found ${activeEffects.length} active effects to connect`, 'info');
+
+            // Connect effects in sequence
             for (const effect of activeEffects) {
                 try {
+                    this.log(`Connecting ${currentNode.constructor.name} → ${effect.name}`, 'info');
                     currentNode.connect(effect.node);
                     currentNode = effect.node;
                     connectionsCount++;
                     connectionLog.push(effect.name);
-                    this.log(`✓ Connected → ${effect.name}`, 'info');
+                    this.log(`✓ Connected → ${effect.name}`, 'success');
+                    
+                    // Verify the connection by checking if the node has outputs
+                    if (effect.node.numberOfOutputs === 0) {
+                        this.log(`⚠ Warning: ${effect.name} has no outputs`, 'error');
+                    }
                 } catch (e) {
                     this.log(`✗ Failed to connect effect ${effect.name}: ${e.message}`, 'error');
+                    // Continue with the chain using the previous node
                 }
             }
+
+            // Connect the final node to master gain
+            this.log(`Connecting final node ${currentNode.constructor.name} → Master Gain`, 'info');
             currentNode.connect(this.masterGainNode);
             connectionsCount++;
             connectionLog.push('Master Output');
-            try {
-                this.masterGainNode.disconnect(this.context.destination);
-            } catch (e) {
-                // Not connected, which is fine
-            }
-            this.masterGainNode.connect(this.context.destination);
+            
+            // Reconnect master gain to effects analyser and destination
+            this.masterGainNode.connect(this.effectsAnalyser);
+            this.effectsAnalyser.connect(this.context.destination);
+            connectionLog.push('Effects Monitor');
             connectionLog.push('Speakers/Headphones');
+
             const chainDescription = connectionLog.join(' → ');
             this.log(`✓ Audio chain built successfully: ${chainDescription}`, 'success');
-            this.log(`Total connections: ${connectionsCount + 1}, Active effects: ${activeEffects.length}`, 'info');
+            this.log(`Total connections: ${connectionsCount + 2}, Active effects: ${activeEffects.length}`, 'info');
+
+            // Immediate connection test
             setTimeout(() => {
                 this.testCompleteAudioChain();
+                this.debugAudioChainIntegrity();
             }, 200);
+
         } catch (error) {
             this.log(`Critical error building audio chain: ${error.message}`, 'error');
             try {
+                // Emergency fallback: direct connection
                 this.inputSource.connect(this.masterGainNode);
-                this.masterGainNode.connect(this.context.destination);
-                this.log('Emergency fallback: Input connected directly to output', 'info');
+                this.masterGainNode.connect(this.effectsAnalyser);
+                this.effectsAnalyser.connect(this.context.destination);
+                this.log('Emergency fallback: Input connected directly to output via analyser', 'info');
             } catch (fallbackError) {
                 this.log(`Emergency fallback failed: ${fallbackError.message}`, 'error');
                 this.log('Audio chain completely broken - please restart audio', 'error');
@@ -595,55 +649,135 @@ class Parsec {
         }
     }
 
+    debugAudioChainIntegrity() {
+        this.log('=== Audio Chain Integrity Check ===', 'info');
+        
+        // Check input source
+        if (this.inputSource) {
+            this.log(`✓ Input source: ${this.inputSource.constructor.name} (${this.inputSource.numberOfOutputs} outputs)`, 'info');
+        } else {
+            this.log('✗ No input source', 'error');
+        }
+
+        // Check each effect
+        this.devices.forEach((deviceData, index) => {
+            if (!deviceData.bypassed) {
+                const effectNode = this.effectNodes[index];
+                if (effectNode) {
+                    const inputs = effectNode.numberOfInputs || 'unknown';
+                    const outputs = effectNode.numberOfOutputs || 'unknown';
+                    this.log(`✓ Effect ${deviceData.name}: ${inputs} inputs, ${outputs} outputs`, 'info');
+                    
+                    // Check if it's an RNBO device
+                    if (deviceData.device && deviceData.device.parameters) {
+                        this.log(`  RNBO device with ${deviceData.device.parameters.length} parameters`, 'info');
+                    }
+                } else {
+                    this.log(`✗ Missing effect node for ${deviceData.name}`, 'error');
+                }
+            }
+        });
+
+        // Check master gain and analyser
+        if (this.masterGainNode) {
+            this.log(`✓ Master gain: ${this.masterGainNode.gain.value.toFixed(2)}`, 'info');
+        }
+        if (this.effectsAnalyser) {
+            this.log(`✓ Effects analyser connected`, 'info');
+        }
+
+        this.log('=== End Integrity Check ===', 'info');
+    }
+
     testCompleteAudioChain() {
-        if (!this.audio.analyserNode || !this.masterGainNode) {
+        if (!this.effectsAnalyser || !this.masterGainNode) {
             return;
         }
-        const testAnalyser = this.context.createAnalyser();
-        testAnalyser.fftSize = 256;
-        try {
-            this.masterGainNode.connect(testAnalyser);
-            setTimeout(() => {
-                const bufferLength = testAnalyser.frequencyBinCount;
-                const dataArray = new Uint8Array(bufferLength);
-                testAnalyser.getByteTimeDomainData(dataArray);
-                let sum = 0;
-                let peak = 0;
-                for (let i = 0; i < bufferLength; i++) {
-                    const sample = Math.abs(dataArray[i] - 128);
-                    sum += sample;
-                    peak = Math.max(peak, sample);
-                }
-                const avgVolume = (sum / bufferLength) / 128;
-                const peakVolume = peak / 128;
-                const outputLevel = Math.max(avgVolume * 1.5, peakVolume * 0.8);
-                if (outputLevel > 0.002) {
-                    this.log(`✓ Signal confirmed at output: ${(outputLevel * 100).toFixed(1)}%`, 'success');
-                } else {
-                    if (this.audio.analyserNode) {
-                        const inputData = new Uint8Array(this.audio.analyserNode.frequencyBinCount);
-                        this.audio.analyserNode.getByteTimeDomainData(inputData);
-                        let inputSum = 0;
-                        for (let i = 0; i < inputData.length; i++) {
-                            inputSum += Math.abs(inputData[i] - 128);
-                        }
-                        const inputLevel = (inputSum / inputData.length) / 128;
-                        if (inputLevel > 0.002) {
-                            this.log(`Input signal present (${(inputLevel * 100).toFixed(1)}%) but not reaching output - check effect settings`, 'error');
-                        } else {
-                            this.log('⚠ No signal detected at input or output - check input levels', 'error');
-                        }
+        
+        setTimeout(() => {
+            const bufferLength = this.effectsAnalyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            this.effectsAnalyser.getByteTimeDomainData(dataArray);
+            let sum = 0;
+            let peak = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                const sample = Math.abs(dataArray[i] - 128);
+                sum += sample;
+                peak = Math.max(peak, sample);
+            }
+            const avgVolume = (sum / bufferLength) / 128;
+            const peakVolume = peak / 128;
+            const outputLevel = Math.max(avgVolume * 1.5, peakVolume * 0.8);
+            if (outputLevel > 0.002) {
+                this.log(`✓ Effects output confirmed: ${(outputLevel * 100).toFixed(1)}% - Effects are working!`, 'success');
+            } else {
+                if (this.audio.analyserNode) {
+                    const inputData = new Uint8Array(this.audio.analyserNode.frequencyBinCount);
+                    this.audio.analyserNode.getByteTimeDomainData(inputData);
+                    let inputSum = 0;
+                    for (let i = 0; i < inputData.length; i++) {
+                        inputSum += Math.abs(inputData[i] - 128);
+                    }
+                    const inputLevel = (inputSum / inputData.length) / 128;
+                    if (inputLevel > 0.002) {
+                        this.log(`Input signal present (${(inputLevel * 100).toFixed(1)}%) but not reaching effects output - check effect settings`, 'error');
+                    } else {
+                        this.log('⚠ No signal detected at input or effects output - check input levels', 'error');
                     }
                 }
-                try {
-                    testAnalyser.disconnect();
-                } catch (e) {
-                    // Already disconnected
-                }
-            }, 500); 
-        } catch (error) {
-            this.log(`Audio chain test failed: ${error.message}`, 'error');
+            }
+        }, 500); 
+    }
+
+    startEffectsVolumeMonitoring() {
+        if (!this.effectsAnalyser) {
+            console.log('No effects analyser available for volume monitoring');
+            return;
         }
+
+        const bufferLength = this.effectsAnalyser.frequencyBinCount;
+        const timeDataArray = new Uint8Array(bufferLength);
+        
+        let lastUpdateTime = 0;
+        const updateInterval = 50; // Update every 50ms
+
+        const monitor = (currentTime) => {
+            if (!this.effectsAnalyser) return; // Stop if analyser is destroyed
+            
+            requestAnimationFrame(monitor);
+
+            // Throttle volume updates
+            if (currentTime - lastUpdateTime < updateInterval) {
+                return;
+            }
+            lastUpdateTime = currentTime;
+
+            // Get time domain data from effects output
+            this.effectsAnalyser.getByteTimeDomainData(timeDataArray);
+
+            // Calculate volume level
+            let sum = 0;
+            let peak = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                const sample = Math.abs(timeDataArray[i] - 128);
+                sum += sample;
+                peak = Math.max(peak, sample);
+            }
+            
+            const avgVolume = (sum / bufferLength) / 128;
+            const peakVolume = peak / 128;
+            
+            // Combine average and peak for responsive display
+            const displayVolume = Math.max(avgVolume * 1.5, peakVolume * 0.8);
+            
+            // Update effects volume bar
+            if (this.effectsVolumeBar) {
+                this.effectsVolumeBar.style.width = `${Math.min(displayVolume, 1.0) * 100}%`;
+            }
+        };
+
+        console.log('✓ Effects volume monitoring started');
+        monitor(performance.now());
     }
 
     async startAudio() {
@@ -658,7 +792,18 @@ class Parsec {
             this.audio.setAudioContext(this.context);
             this.masterGainNode = this.context.createGain();
             this.masterGainNode.gain.setValueAtTime(0.5, this.context.currentTime);
-            this.masterGainNode.connect(this.context.destination);
+            
+            // Create effects analyser for monitoring output after effects processing
+            this.effectsAnalyser = this.context.createAnalyser();
+            this.effectsAnalyser.fftSize = 512;
+            this.effectsAnalyser.smoothingTimeConstant = 0.3;
+            this.effectsAnalyser.minDecibels = -90;
+            this.effectsAnalyser.maxDecibels = -10;
+            
+            // Connect master gain → effects analyser → destination
+            this.masterGainNode.connect(this.effectsAnalyser);
+            this.effectsAnalyser.connect(this.context.destination);
+            
             this.isAudioStarted = true;
             this.elements.startAudio.disabled = true;
             this.elements.startAudio.textContent = 'Audio Started';
@@ -668,6 +813,9 @@ class Parsec {
             if (this.elements.masterVolumeValue) {
                 this.elements.masterVolumeValue.textContent = '0.50';
             }
+            
+            // Start effects volume monitoring
+            this.startEffectsVolumeMonitoring();
         } catch (error) {
             this.log(`Failed to start audio: ${error.message}`, 'error');
         }
@@ -882,7 +1030,7 @@ class Parsec {
             const patchData = JSON.parse(text);
             const { device, node } = await loadRNBOEffect(patchData, this.context);
             this.effectNodes.push(node);
-            this.devices.push({ device, node, name: file.name.replace('.export.json', '') });
+            this.devices.push({ device, node, name: file.name.replace('.export.json', ''), effectName: file.name.replace('.export.json', '') });
             this.addEffectToUI(device, file.name.replace('.export.json', ''), this.devices.length - 1);
             this.reconnectAudioChain();
             this.updateControlsPanel();
@@ -1299,24 +1447,19 @@ class Parsec {
             const originalVolume = this.masterGainNode.gain.value;
             this.masterGainNode.gain.setTargetAtTime(0, this.context.currentTime, fadeTime / 3);
             await new Promise(resolve => setTimeout(resolve, fadeTime * 1000));
-            const effectButtons = document.querySelectorAll('.effect-btn');
-            effectButtons.forEach(button => button.classList.remove('active'));
-            this.effectNodes.forEach(node => {
-                try { node.disconnect(); } catch (e) {}
-            });
-            this.effectNodes = [];
-            this.devices = [];
-            this.gestureParameterMapping = {
-                wristX: { deviceIndex: null, paramIndex: null, paramName: 'None' },
-                wristY: { deviceIndex: null, paramIndex: null, paramName: 'None' },
-                handCurl: { deviceIndex: null, paramIndex: null, paramName: 'None' }
-            };
+            this.clearEffectsChain();
             for (const effectName of selectedEffects) {
                 try {
                     const { device, node } = await loadBuiltInEffect(effectName, this.context);
                     const displayName = effectName.replace('rnbo.', '').replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                     this.effectNodes.push(node);
-                    this.devices.push({ device, node, name: displayName, effectName, bypassed: Math.random() < 0.1 });
+                    this.devices.push({
+                        device,
+                        node,
+                        name: displayName,
+                        effectName,
+                        bypassed: Math.random() < 0.1
+                    });
                     const button = document.querySelector(`[data-effect="${effectName}"]`);
                     if (button) button.classList.add('active');
                 } catch (error) {
@@ -1345,31 +1488,109 @@ class Parsec {
             this.log('Please start audio first', 'error');
             return;
         }
+
         const isActive = button.classList.contains('active');
+        
         if (isActive) {
+            // Remove effect
             const deviceIndex = this.devices.findIndex(d => d.effectName === effectName);
             if (deviceIndex !== -1) {
                 this.removeEffect(deviceIndex);
             }
         } else {
+            // Add effect
             this.showLoading(true);
             try {
                 const { device, node } = await loadBuiltInEffect(effectName, this.context);
                 const displayName = effectName.replace('rnbo.', '').replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                
+                // Validate the node before adding
+                if (!node || typeof node.connect !== 'function') {
+                    throw new Error(`Invalid audio node returned for ${effectName}`);
+                }
+
+                this.log(`Loaded ${displayName} - Node type: ${node.constructor.name}, Inputs: ${node.numberOfInputs}, Outputs: ${node.numberOfOutputs}`, 'info');
+
                 this.effectNodes.push(node);
-                this.devices.push({ device, node, name: displayName, effectName, bypassed: false });
+                this.devices.push({
+                    device,
+                    node,
+                    name: displayName,
+                    effectName,
+                    bypassed: false
+                });
+
                 button.classList.add('active');
                 this.addEffectToChain(device, displayName, this.devices.length - 1);
                 this.reconnectAudioChain();
                 this.updateControlsPanel();
                 this.establishStableParameterMapping();
                 this.log(`Added effect: ${displayName}`, 'success');
+
+                // Test the specific effect after a short delay
+                setTimeout(() => {
+                    this.testEffectOutput(displayName, this.devices.length - 1);
+                }, 300);
+
             } catch (error) {
                 this.log(`Failed to load ${effectName}: ${error.message}`, 'error');
+                // Make sure button state is correct
+                button.classList.remove('active');
             } finally {
                 this.showLoading(false);
             }
         }
+    }
+
+    testEffectOutput(effectName, deviceIndex) {
+        if (!this.effectsAnalyser || deviceIndex >= this.devices.length) {
+            return;
+        }
+
+        const deviceData = this.devices[deviceIndex];
+        if (!deviceData || deviceData.bypassed) {
+            return;
+        }
+
+        // Test if the effect is processing audio
+        setTimeout(() => {
+            const bufferLength = this.effectsAnalyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            this.effectsAnalyser.getByteTimeDomainData(dataArray);
+            
+            let sum = 0;
+            let peak = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                const sample = Math.abs(dataArray[i] - 128);
+                sum += sample;
+                peak = Math.max(peak, sample);
+            }
+            
+            const avgVolume = (sum / bufferLength) / 128;
+            const peakVolume = peak / 128;
+            const outputLevel = Math.max(avgVolume * 1.5, peakVolume * 0.8);
+            
+            if (outputLevel > 0.002) {
+                this.log(`✓ ${effectName} is processing audio: ${(outputLevel * 100).toFixed(1)}% output`, 'success');
+            } else {
+                this.log(`⚠ ${effectName} may not be processing audio - check input signal and effect settings`, 'error');
+                
+                // Check if input is present
+                if (this.audio.analyserNode) {
+                    const inputData = new Uint8Array(this.audio.analyserNode.frequencyBinCount);
+                    this.audio.analyserNode.getByteTimeDomainData(inputData);
+                    let inputSum = 0;
+                    for (let i = 0; i < inputData.length; i++) {
+                        inputSum += Math.abs(inputData[i] - 128);
+                    }
+                    const inputLevel = (inputSum / inputData.length) / 128;
+                    
+                    if (inputLevel > 0.002) {
+                        this.log(`Input signal present (${(inputLevel * 100).toFixed(1)}%) but ${effectName} not outputting - check effect parameters`, 'error');
+                    }
+                }
+            }
+        }, 500);
     }
 
     async playAudio() {

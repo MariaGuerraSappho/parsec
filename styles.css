@@ -944,6 +944,7 @@ body {
     gap: 15px;
     align-items: flex-start;
     justify-content: center;
+    flex-wrap: wrap;
 }
 
 .hand-controls {
